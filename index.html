@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>転職成功確率シミュレーター | MIRAGE Analysis</title>
+<meta name="description" content="転職の成功を複数軸に分解し、カテゴリ内相関を考慮したモンテカルロ・シミュレーションで確率分布を可視化するツール" />
+<style>
+  :root {
+    --bg: #0B0F14;
+    --panel: #131B24;
+    --border: #22303C;
+    --border-soft: #1A222B;
+    --text: #E6EDF3;
+    --muted: #7C8B9A;
+    --cyan: #4FD8E8;
+    --violet: #9D7FEA;
+    --amber: #FFB020;
+    --green: #3DDC97;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Hiragino Sans', 'Yu Gothic', 'Noto Sans JP', sans-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .msim-root { position: relative; max-width: 980px; margin: 0 auto; padding: 24px; min-height: 100vh; overflow: hidden; }
+  .msim-scanlines {
+    position: absolute; inset: 0; pointer-events: none;
+    background-image: repeating-linear-gradient(0deg, rgba(79,216,232,0.02) 0px, rgba(79,216,232,0.02) 1px, transparent 1px, transparent 3px);
+  }
+  header.msim-header {
+    display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 12px;
+    margin-bottom: 20px; border-bottom: 1px solid var(--border); padding-bottom: 16px; position: relative;
+  }
+  .eyebrow { font-size: 11px; letter-spacing: .12em; color: var(--cyan); font-family: ui-monospace, monospace; margin-bottom: 6px; }
+  h1 { font-size: 24px; font-weight: 700; margin: 0; }
+  .header-note { font-size: 12px; color: var(--muted); max-width: 340px; line-height: 1.6; }
+  .msim-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 16px; margin-bottom: 16px; position: relative; }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px; margin-bottom: 16px; position: relative; }
+  .panel-title { font-size: 12px; color: var(--muted); letter-spacing: .04em; margin-bottom: 12px; font-family: ui-monospace, monospace; }
+  #item-list { display: flex; flex-direction: column; gap: 10px; max-height: 480px; overflow-y: auto; }
+  .item-row { display: flex; gap: 10px; align-items: flex-start; padding: 6px 4px; border-bottom: 1px solid var(--border-soft); transition: opacity .15s ease; }
+  .item-row.excluded { opacity: .35; }
+  .item-checkbox { width: 16px; height: 16px; border-radius: 4px; border: 2px solid; margin-top: 4px; cursor: pointer; flex-shrink: 0; background: transparent; padding: 0; }
+  .item-main { flex: 1; min-width: 0; }
+  .item-top-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .item-name { font-size: 13px; }
+  .cat-tag { font-size: 10px; padding: 2px 6px; border-radius: 4px; border: 1px solid; white-space: nowrap; font-family: ui-monospace, monospace; flex-shrink: 0; }
+  .slider-row { display: flex; align-items: center; gap: 10px; }
+  input[type=range] {
+    -webkit-appearance: none; appearance: none; flex: 1; height: 6px; border-radius: 3px; background: var(--border);
+    outline: none; touch-action: pan-y;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none; width: 22px; height: 22px; border-radius: 50%;
+    background: currentColor; border: 3px solid var(--bg); cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb { width: 22px; height: 22px; border-radius: 50%; background: currentColor; border: 3px solid var(--bg); cursor: pointer; }
+  input[type=range]:disabled { opacity: .4; }
+  .p-value { font-size: 12px; color: var(--cyan); font-family: ui-monospace, monospace; width: 36px; text-align: right; flex-shrink: 0; }
+  .actual-btn {
+    font-size: 11px; padding: 3px 8px; border-radius: 5px; border: 1px solid var(--border); cursor: pointer;
+    font-family: ui-monospace, monospace; white-space: nowrap; flex-shrink: 0; background: transparent; color: var(--muted);
+  }
+  .actual-btn.on { background: var(--green); color: var(--bg); border-color: var(--green); }
+  .slider-row2 { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .mini-label { font-size: 10px; color: var(--muted); font-family: ui-monospace, monospace; flex-shrink: 0; width: 28px; }
+  .mini-slider-wrap { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 130px; }
+  .side-panel { display: flex; flex-direction: column; gap: 16px; }
+  .gauge-card { text-align: center; }
+  .gauge-sub { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .stat-label { font-size: 12px; color: var(--muted); font-family: ui-monospace, monospace; }
+  .stat-value { font-size: 28px; font-weight: 700; color: var(--cyan); font-family: ui-monospace, monospace; margin: 4px 0; }
+  .stat-value-amber { font-size: 28px; font-weight: 700; color: var(--amber); font-family: ui-monospace, monospace; margin: 8px 0 4px; }
+  .stat-value-green { font-size: 22px; font-weight: 700; color: var(--green); font-family: ui-monospace, monospace; margin: 4px 0 8px; }
+  .stat-sub { font-size: 11px; color: var(--muted); line-height: 1.6; }
+  .threshold-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .pair-row { display: flex; gap: 12px; align-items: flex-start; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+  .pair-rank {
+    width: 22px; height: 22px; border-radius: 50%; background: var(--border); color: var(--violet);
+    display: flex; align-items: center; justify-content: center; font-size: 11px; font-family: ui-monospace, monospace;
+    flex-shrink: 0; margin-top: 2px;
+  }
+  .pair-names { font-size: 13px; margin-bottom: 4px; line-height: 1.5; }
+  .pair-stats { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }
+  .legend-row { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; font-size: 11px; color: var(--muted); }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  svg text { font-family: ui-monospace, monospace; }
+  footer { text-align: center; font-size: 11px; color: var(--muted); padding: 24px 0 8px; }
+  footer a { color: var(--cyan); text-decoration: none; }
+  .export-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%;
+    background: transparent; border: 1px solid var(--cyan); color: var(--cyan);
+    padding: 12px 16px; border-radius: 8px; font-size: 13px; font-family: ui-monospace, monospace;
+    cursor: pointer; margin-bottom: 16px; transition: background .15s ease;
+  }
+  .export-btn:hover { background: rgba(79,216,232,0.08); }
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.65); display: flex; align-items: center;
+    justify-content: center; z-index: 100; padding: 16px;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal-box {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px;
+    max-width: 680px; width: 100%; max-height: 85vh; display: flex; flex-direction: column; gap: 12px;
+  }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text); font-family: ui-monospace, monospace; }
+  .modal-close-btn { background: transparent; border: none; color: var(--muted); font-size: 20px; cursor: pointer; line-height: 1; padding: 0 4px; }
+  #prompt-textarea {
+    flex: 1; min-height: 320px; background: #0B0F14; color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 10px; font-family: ui-monospace, monospace; font-size: 11px; white-space: pre-wrap; resize: vertical;
+  }
+  .modal-actions { display: flex; gap: 10px; }
+  .copy-btn {
+    flex: 1; background: var(--cyan); color: var(--bg); border: none; padding: 10px; border-radius: 6px;
+    font-size: 13px; font-weight: 700; cursor: pointer; font-family: ui-monospace, monospace;
+  }
+  .brand-watermark {
+    position: fixed; bottom: 10px; right: 14px; font-size: 10px; color: var(--muted);
+    font-family: ui-monospace, monospace; opacity: 0.5; letter-spacing: .04em; pointer-events: none; z-index: 10;
+  }
+  @media (max-width: 680px) {
+    .msim-root { padding: 16px; }
+    .msim-header { flex-direction: column; align-items: flex-start; }
+    h1 { font-size: 20px; }
+    .msim-grid { grid-template-columns: 1fr; }
+    .item-name { font-size: 14px; }
+    .item-checkbox { width: 24px; height: 24px; margin-top: 2px; }
+    .item-row { padding: 10px 4px; gap: 12px; }
+    #item-list { max-height: none; }
+    .p-value { width: 44px; font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+<div class="msim-root">
+  <div class="msim-scanlines"></div>
+  <div class="brand-watermark">藤井工藝</div>
+
+  <header class="msim-header">
+    <div>
+      <div class="eyebrow">MIRAGE ANALYSIS · CAREER TRANSITION</div>
+      <h1>転職成功確率シミュレーター</h1>
+    </div>
+    <div class="header-note">「一般的な達成確率」に加え、各軸の「期待値」と「実感値」を入力すると、現在の納得度が算出されます。</div>
+  </header>
+
+  <div class="msim-grid">
+    <div class="panel">
+      <div class="panel-title">成功の構成要素（自然な成功確率）</div>
+      <div id="item-list"></div>
+    </div>
+
+    <div class="side-panel">
+      <div class="panel gauge-card">
+        <div class="panel-title">総合成功スコア（単純平均）</div>
+        <div id="gauge-svg"></div>
+        <div class="gauge-sub" id="gauge-sub"></div>
+      </div>
+
+      <div class="panel gauge-card" style="border-color:#3DDC97">
+        <div class="panel-title">現在の納得度（期待×実感）</div>
+        <div id="satisfaction-gauge-svg"></div>
+        <div class="gauge-sub" id="satisfaction-sub"></div>
+      </div>
+
+      <div class="panel">
+        <div class="stat-label">全軸AND達成確率（独立仮定・参考値）</div>
+        <div class="stat-value" id="and-value"></div>
+        <div class="stat-sub" id="and-sub"></div>
+      </div>
+
+      <div class="panel">
+        <div class="stat-label">K軸以上を達成する確率</div>
+        <div class="threshold-row">
+          <input type="range" id="threshold-slider" min="0" max="14" value="8" style="color:var(--amber)" />
+          <span class="p-value" id="threshold-value">K = 8</span>
+        </div>
+        <div class="stat-value-amber" id="k-value"></div>
+        <div class="stat-sub" id="k-sub"></div>
+      </div>
+
+      <div class="panel" id="actual-card">
+        <div class="stat-label">あなたの実績評価</div>
+        <div id="actual-content"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">モデル設定：カテゴリ内相関 ρ</div>
+    <div class="threshold-row">
+      <input type="range" id="rho-slider" min="0" max="90" step="5" value="35" style="color:var(--violet)" />
+      <span class="p-value" id="rho-value">ρ = 35%</span>
+    </div>
+    <div class="stat-sub">ρ=0%は「軸間は無関係（独立）」、ρが高いほど同じカテゴリ内の項目が一緒に成功／失敗しやすくなります。各項目の個別確率(%)は変えず、相関構造だけを調整します。</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title" id="pairs-title">起きやすい組み合わせ TOP5</div>
+    <div id="pairs-list"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">期待と現実のマップ（各軸：期待値 × 実感値）</div>
+    <div id="scatter-svg" style="width:100%;"></div>
+    <div class="legend-row">
+      <span class="legend-item"><span class="legend-dot" style="background:#3DDC97"></span>対角線より上＝予想以上</span>
+      <span class="legend-item"><span class="legend-dot" style="background:#FF6B6B"></span>対角線より下＝予想未満</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">達成軸数の確率分布（相関考慮・モンテカルロ N=3,000）</div>
+    <div id="chart-svg" style="width:100%;"></div>
+    <div class="legend-row" id="legend-row"></div>
+  </div>
+
+  <button class="export-btn" id="export-prompt-btn">現状をAI相談用プロンプト（Markdown）として書き出す</button>
+
+  <footer>MIRAGE Analysis — 個人の意思決定を補助するための思考整理ツールです。転職の成否を保証するものではありません。</footer>
+</div>
+
+<div class="modal-overlay hidden" id="prompt-modal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span>AI相談用プロンプト（コピーしてChatGPTやClaudeに貼り付けてください）</span>
+      <button class="modal-close-btn" id="modal-close-btn">×</button>
+    </div>
+    <textarea id="prompt-textarea" readonly spellcheck="false"></textarea>
+    <div class="modal-actions">
+      <button class="copy-btn" id="copy-prompt-btn">クリップボードにコピー</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ===================== データ定義 ===================== */
+const CATS = {
+  A: { label: "定量・実務", color: "#4FD8E8" },
+  B: { label: "内的動機・心理", color: "#9D7FEA" },
+  C: { label: "定着・意思決定", color: "#FFB020" },
+};
+
+let items = [
+  { id: 1, cat: "B", name: "人間関係の良好が1年続く", p: 55, included: true, actual: false, expect: 50, real: 50 },
+  { id: 2, cat: "A", name: "収入が30%以上上がる", p: 10, included: true, actual: false, expect: 50, real: 50 },
+  { id: 3, cat: "A", name: "残業時間が20%以上削減", p: 35, included: true, actual: false, expect: 50, real: 50 },
+  { id: 4, cat: "A", name: "役職が上がる", p: 20, included: true, actual: false, expect: 50, real: 50 },
+  { id: 5, cat: "A", name: "社内の横のつながりが増える", p: 45, included: true, actual: false, expect: 50, real: 50 },
+  { id: 6, cat: "A", name: "仕事外での新天地の知り合いが増える", p: 15, included: true, actual: false, expect: 50, real: 50 },
+  { id: 7, cat: "B", name: "裁量権が拡大する", p: 30, included: true, actual: false, expect: 50, real: 50 },
+  { id: 8, cat: "B", name: "有能感（できる実感）を得る", p: 40, included: true, actual: false, expect: 50, real: 50 },
+  { id: 9, cat: "B", name: "心理的安全性を感じる", p: 35, included: true, actual: false, expect: 50, real: 50 },
+  { id: 10, cat: "B", name: "仕事の意味・目的に納得できる", p: 35, included: true, actual: false, expect: 50, real: 50 },
+  { id: 11, cat: "B", name: "前職の転職理由が実際に解消される", p: 50, included: true, actual: false, expect: 50, real: 50 },
+  { id: 12, cat: "C", name: "オンボーディングが円滑に進む", p: 40, included: true, actual: false, expect: 50, real: 50 },
+  { id: 13, cat: "C", name: "期待値と実態のギャップが小さい", p: 30, included: true, actual: false, expect: 50, real: 50 },
+  { id: 14, cat: "C", name: "後悔のなさ（意思決定への納得）", p: 45, included: true, actual: false, expect: 50, real: 50 },
+];
+
+let threshold = 8;
+let rho = 35;
+let lastStats = {};
+
+/* ===================== 統計計算 ===================== */
+function computePMF(probs) {
+  let pmf = [1];
+  for (const p of probs) {
+    const q = 1 - p / 100, pp = p / 100;
+    const next = new Array(pmf.length + 1).fill(0);
+    for (let i = 0; i < pmf.length; i++) { next[i] += pmf[i] * q; next[i + 1] += pmf[i] * pp; }
+    pmf = next;
+  }
+  return pmf;
+}
+
+// 標準正規分布の逆累積分布関数（Acklamの近似式）
+function invNormCDF(p) {
+  if (p <= 0) return -8;
+  if (p >= 1) return 8;
+  const a = [-3.969683028665376e+01,2.209460984245205e+02,-2.759285104469687e+02,1.383577518672690e+02,-3.066479806614716e+01,2.506628277459239e+00];
+  const b = [-5.447609879822406e+01,1.615858368580409e+02,-1.556989798598866e+02,6.680131188771972e+01,-1.328068155288572e+01];
+  const c = [-7.784894002430293e-03,-3.223964580411365e-01,-2.400758277161838e+00,-2.549732539343734e+00,4.374664141464968e+00,2.938163982698783e+00];
+  const d = [7.784695709041462e-03,3.224671290700398e-01,2.445134137142996e+00,3.754408661907416e+00];
+  const plow = 0.02425, phigh = 1 - plow;
+  let q, r;
+  if (p < plow) { q = Math.sqrt(-2*Math.log(p)); return (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1); }
+  else if (p <= phigh) { q = p - 0.5; r = q*q; return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q / (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1); }
+  else { q = Math.sqrt(-2*Math.log(1-p)); return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) / ((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1); }
+}
+
+function randNormal() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+// カテゴリ内相関ρを持つガウス・コピュラでモンテカルロ・シミュレーション
+function simulateCorrelated(arr, rhoVal, trials) {
+  trials = trials || 3000;
+  const n = arr.length;
+  const zThresh = arr.map((it) => invNormCDF(it.p / 100));
+  const cats = [...new Set(arr.map((it) => it.cat))];
+  const pmfCount = new Array(n + 1).fill(0);
+  const jointCount = {};
+  const sqrtRho = Math.sqrt(Math.max(0, rhoVal));
+  const sqrtRest = Math.sqrt(Math.max(0, 1 - rhoVal));
+
+  for (let t = 0; t < trials; t++) {
+    const catFactor = {};
+    cats.forEach((c) => (catFactor[c] = randNormal()));
+    const successes = [];
+    for (let i = 0; i < n; i++) {
+      const latent = sqrtRho * catFactor[arr[i].cat] + sqrtRest * randNormal();
+      if (latent <= zThresh[i]) successes.push(i);
+    }
+    pmfCount[successes.length]++;
+    for (let a = 0; a < successes.length; a++)
+      for (let b = a + 1; b < successes.length; b++) {
+        const key = successes[a] + "-" + successes[b];
+        jointCount[key] = (jointCount[key] || 0) + 1;
+      }
+  }
+  const pmf = pmfCount.map((v) => v / trials);
+  const pairs = [];
+  for (let i = 0; i < n; i++)
+    for (let j = i + 1; j < n; j++) {
+      const jp = (jointCount[i + "-" + j] || 0) / trials;
+      const indep = (arr[i].p / 100) * (arr[j].p / 100);
+      pairs.push({ i, j, jp, indep });
+    }
+  pairs.sort((a, b) => b.jp - a.jp);
+  return { pmf, pairs };
+}
+
+/* ===================== DOM構築（初回のみ） ===================== */
+const itemListEl = document.getElementById("item-list");
+
+items.forEach((it) => {
+  const row = document.createElement("div");
+  row.className = "item-row";
+  row.id = "row-" + it.id;
+
+  const checkbox = document.createElement("button");
+  checkbox.className = "item-checkbox";
+  checkbox.style.borderColor = CATS[it.cat].color;
+  checkbox.style.background = CATS[it.cat].color;
+  checkbox.setAttribute("aria-label", "含める（クリックで除外）");
+  checkbox.onclick = () => {
+    it.included = !it.included;
+    row.classList.toggle("excluded", !it.included);
+    slider.disabled = !it.included;
+    actualBtn.disabled = !it.included;
+    checkbox.style.background = it.included ? CATS[it.cat].color : "transparent";
+    updateDerived();
+  };
+
+  const main = document.createElement("div");
+  main.className = "item-main";
+
+  const topRow = document.createElement("div");
+  topRow.className = "item-top-row";
+  const nameSpan = document.createElement("span");
+  nameSpan.className = "item-name";
+  nameSpan.textContent = it.name;
+  const catTag = document.createElement("span");
+  catTag.className = "cat-tag";
+  catTag.style.color = CATS[it.cat].color;
+  catTag.style.borderColor = CATS[it.cat].color;
+  catTag.textContent = CATS[it.cat].label;
+  topRow.appendChild(nameSpan);
+  topRow.appendChild(catTag);
+
+  const sliderRow = document.createElement("div");
+  sliderRow.className = "slider-row";
+  const slider = document.createElement("input");
+  slider.type = "range"; slider.min = 0; slider.max = 100; slider.value = it.p;
+  slider.style.color = CATS[it.cat].color;
+  const pValue = document.createElement("span");
+  pValue.className = "p-value";
+  pValue.textContent = it.p + "%";
+  slider.oninput = (e) => {
+    it.p = Number(e.target.value);
+    pValue.textContent = it.p + "%";
+    updateDerived();
+  };
+  const actualBtn = document.createElement("button");
+  actualBtn.className = "actual-btn";
+  actualBtn.textContent = "実績";
+  actualBtn.onclick = () => {
+    it.actual = !it.actual;
+    actualBtn.classList.toggle("on", it.actual);
+    updateDerived();
+  };
+
+  sliderRow.appendChild(slider);
+  sliderRow.appendChild(pValue);
+  sliderRow.appendChild(actualBtn);
+  main.appendChild(topRow);
+  main.appendChild(sliderRow);
+
+  const sliderRow2 = document.createElement("div");
+  sliderRow2.className = "slider-row2";
+
+  const expectWrap = document.createElement("div");
+  expectWrap.className = "mini-slider-wrap";
+  const expectLabel = document.createElement("span");
+  expectLabel.className = "mini-label"; expectLabel.textContent = "期待";
+  const expectSlider = document.createElement("input");
+  expectSlider.type = "range"; expectSlider.min = 0; expectSlider.max = 100; expectSlider.value = it.expect;
+  expectSlider.style.color = "#FFB020";
+  const expectValue = document.createElement("span");
+  expectValue.className = "p-value"; expectValue.textContent = it.expect + "%";
+  expectSlider.oninput = (e) => { it.expect = Number(e.target.value); expectValue.textContent = it.expect + "%"; updateDerived(); };
+  expectWrap.appendChild(expectLabel); expectWrap.appendChild(expectSlider); expectWrap.appendChild(expectValue);
+
+  const realWrap = document.createElement("div");
+  realWrap.className = "mini-slider-wrap";
+  const realLabel = document.createElement("span");
+  realLabel.className = "mini-label"; realLabel.textContent = "実感";
+  const realSlider = document.createElement("input");
+  realSlider.type = "range"; realSlider.min = 0; realSlider.max = 100; realSlider.value = it.real;
+  realSlider.style.color = "#3DDC97";
+  const realValue = document.createElement("span");
+  realValue.className = "p-value"; realValue.textContent = it.real + "%";
+  realSlider.oninput = (e) => { it.real = Number(e.target.value); realValue.textContent = it.real + "%"; updateDerived(); };
+  realWrap.appendChild(realLabel); realWrap.appendChild(realSlider); realWrap.appendChild(realValue);
+
+  sliderRow2.appendChild(expectWrap);
+  sliderRow2.appendChild(realWrap);
+  main.appendChild(sliderRow2);
+
+  row.appendChild(checkbox);
+  row.appendChild(main);
+  itemListEl.appendChild(row);
+});
+
+const thresholdSlider = document.getElementById("threshold-slider");
+const thresholdValueEl = document.getElementById("threshold-value");
+thresholdSlider.oninput = (e) => {
+  threshold = Number(e.target.value);
+  thresholdValueEl.textContent = "K = " + threshold;
+  updateDerived();
+};
+
+const rhoSlider = document.getElementById("rho-slider");
+const rhoValueEl = document.getElementById("rho-value");
+rhoSlider.oninput = (e) => {
+  rho = Number(e.target.value);
+  rhoValueEl.textContent = "ρ = " + rho + "%";
+  updateDerived();
+};
+
+/* ===================== ゲージ描画 ===================== */
+function renderGauge(pct, color, label) {
+  color = color || "#4FD8E8";
+  label = label || "平均達成期待値";
+  const r = 54, c = 2 * Math.PI * r;
+  const offset = c - (Math.max(0, Math.min(100, pct)) / 100) * c;
+  return `<svg width="140" height="140" viewBox="0 0 140 140" style="display:block;margin:8px auto;">
+    <circle cx="70" cy="70" r="${r}" fill="none" stroke="#22303C" stroke-width="10" />
+    <circle cx="70" cy="70" r="${r}" fill="none" stroke="${color}" stroke-width="10" stroke-linecap="round"
+      stroke-dasharray="${c}" stroke-dashoffset="${offset}" transform="rotate(-90 70 70)" style="transition:stroke-dashoffset .3s ease" />
+    <text x="70" y="66" text-anchor="middle" font-size="26" font-weight="700" fill="#E6EDF3">${pct.toFixed(0)}%</text>
+    <text x="70" y="86" text-anchor="middle" font-size="10" fill="#7C8B9A" font-family="sans-serif">${label}</text>
+  </svg>`;
+}
+
+/* ===================== 分布グラフ描画 ===================== */
+function renderChart(chartData, threshold, hasActual, kActual) {
+  const W = 640, H = 220, padL = 34, padB = 26, padT = 10, padR = 10;
+  const n = chartData.length;
+  const innerW = W - padL - padR, innerH = H - padT - padB;
+  const maxVal = Math.max(...chartData.map((d) => d.prob), 1);
+  const barGap = 4;
+  const barW = innerW / n - barGap;
+
+  let bars = "";
+  chartData.forEach((d, i) => {
+    const h = (d.prob / maxVal) * innerH;
+    const x = padL + i * (barW + barGap);
+    const y = padT + innerH - h;
+    let fill = "#2A3A47";
+    if (d.k >= threshold) fill = "#FFB020";
+    if (hasActual && d.k === kActual) fill = "#3DDC97";
+    bars += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="${fill}">
+      <title>${d.k}軸達成: ${d.prob}%</title>
+    </rect>`;
+    if (i % 1 === 0) {
+      bars += `<text x="${(x + barW / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#7C8B9A">${d.k}</text>`;
+    }
+  });
+
+  const gridlines = [0.25, 0.5, 0.75, 1].map((f) => {
+    const y = padT + innerH * (1 - f);
+    return `<line x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}" stroke="#22303C" stroke-dasharray="3,3" />`;
+  }).join("");
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:220px;display:block;">
+    ${gridlines}
+    ${bars}
+    <text x="${padL}" y="${H - 8}" font-size="10" fill="#7C8B9A"></text>
+  </svg>`;
+}
+
+/* ===================== 期待×実感 散布図描画 ===================== */
+function renderScatter(included) {
+  const W = 640, H = 260, pad = 34;
+  const innerW = W - pad * 2, innerH = H - pad * 2;
+  const toX = (v) => pad + (v / 100) * innerW;
+  const toY = (v) => pad + innerH - (v / 100) * innerH;
+
+  const gridlines = [0, 25, 50, 75, 100].map((v) => {
+    const x = toX(v), y = toY(v);
+    return `<line x1="${x}" x2="${x}" y1="${pad}" y2="${H - pad}" stroke="#1A222B" />
+            <line x1="${pad}" x2="${W - pad}" y1="${y}" y2="${y}" stroke="#1A222B" />`;
+  }).join("");
+
+  const diagonal = `<line x1="${toX(0)}" y1="${toY(0)}" x2="${toX(100)}" y2="${toY(100)}" stroke="#3A4A58" stroke-dasharray="4,4" />`;
+
+  const points = included.map((it) => {
+    const x = toX(it.expect), y = toY(it.real);
+    const gap = it.real - it.expect;
+    const fill = gap >= 0 ? "#3DDC97" : "#FF6B6B";
+    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" fill="${fill}" fill-opacity="0.85" stroke="${CATS[it.cat].color}" stroke-width="1.5">
+      <title>${it.name}\n期待:${it.expect}% / 実感:${it.real}% (差:${gap >= 0 ? "+" : ""}${gap})</title>
+    </circle>`;
+  }).join("");
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:240px;display:block;">
+    ${gridlines}
+    ${diagonal}
+    ${points}
+    <text x="${pad}" y="${H - 8}" font-size="10" fill="#7C8B9A">期待値 低</text>
+    <text x="${W - pad}" y="${H - 8}" text-anchor="end" font-size="10" fill="#7C8B9A">期待値 高</text>
+    <text x="${pad + 4}" y="${pad + 10}" font-size="10" fill="#7C8B9A">実感 高</text>
+    <text x="${pad + 4}" y="${H - pad - 4}" font-size="10" fill="#7C8B9A">実感 低</text>
+  </svg>`;
+}
+
+/* ===================== 派生値の再計算＆再描画 ===================== */
+function updateDerived() {
+  const included = items.filter((it) => it.included);
+  const n = included.length;
+
+  const weightedMean = n ? included.reduce((s, it) => s + it.p, 0) / n : 0;
+  const andProb = included.reduce((acc, it) => acc * (it.p / 100), 1) * 100;
+
+  const sim = simulateCorrelated(included.map((it) => ({ p: it.p, cat: it.cat, name: it.name })), rho / 100, 3000);
+  const pmf = sim.pmf;
+
+  thresholdSlider.max = n;
+  if (threshold > n) { threshold = n; thresholdSlider.value = n; thresholdValueEl.textContent = "K = " + n; }
+
+  let cumAtLeast = 0;
+  for (let i = threshold; i < pmf.length; i++) cumAtLeast += pmf[i];
+  cumAtLeast *= 100;
+
+  const kActual = included.filter((it) => it.actual).length;
+  const hasActual = included.some((it) => it.actual);
+  let percentileAtLeast = 0;
+  for (let i = kActual; i < pmf.length; i++) percentileAtLeast += pmf[i];
+  percentileAtLeast *= 100;
+
+  const chartData = pmf.map((v, i) => ({ k: i, prob: +(v * 100).toFixed(3) }));
+  const topPairs = sim.pairs.slice(0, 5).map((pr) => ({
+    a: included[pr.i], b: included[pr.j], jp: pr.jp * 100, indep: pr.indep * 100,
+  }));
+
+  // --- ゲージ ---
+  document.getElementById("gauge-svg").innerHTML = renderGauge(weightedMean, "#4FD8E8", "平均達成期待値");
+  document.getElementById("gauge-sub").textContent = n + "軸中を平均した達成期待値";
+
+  // --- 納得度（期待×実感） ---
+  const satPerItem = included.map((it) => Math.max(0, Math.min(100, 50 + (it.real - it.expect) * 0.5)));
+  const satisfaction = satPerItem.length ? satPerItem.reduce((a, b) => a + b, 0) / satPerItem.length : 50;
+  document.getElementById("satisfaction-gauge-svg").innerHTML = renderGauge(satisfaction, "#3DDC97", "期待とのギャップから算出");
+  document.getElementById("satisfaction-sub").textContent = "各軸の「実感−期待」の平均から算出（50%が期待通り）";
+
+  // --- 期待×実感マップ ---
+  document.getElementById("scatter-svg").innerHTML = renderScatter(included);
+
+  // --- エクスポート用に最新の算出結果をキャッシュ ---
+  lastStats = {
+    n, weightedMean, andProb, cumAtLeast, threshold, rho,
+    kActual, hasActual, percentileAtLeast, satisfaction,
+  };
+
+  // --- AND確率 ---
+  document.getElementById("and-value").textContent = (andProb < 0.01 ? "<0.01" : andProb.toFixed(2)) + "%";
+  document.getElementById("and-sub").textContent = n + "軸すべてを同時に満たす確率。相関を考慮しない単純計算です";
+
+  // --- K軸以上 ---
+  document.getElementById("k-value").textContent = cumAtLeast.toFixed(1) + "%";
+  document.getElementById("k-sub").textContent = n + "軸中" + threshold + "軸以上を達成する確率";
+
+  // --- 実績評価 ---
+  const actualCard = document.getElementById("actual-card");
+  const actualContent = document.getElementById("actual-content");
+  actualCard.style.borderColor = hasActual ? "#3DDC97" : "#22303C";
+  if (hasActual) {
+    actualContent.innerHTML = `
+      <div class="stat-value-green">${kActual} / ${n} 軸達成</div>
+      <div class="stat-sub">世間一般の分布の中で、あなたと同じかそれ以上を達成する割合は約${percentileAtLeast.toFixed(1)}%<br>
+      → おおよそ<strong style="color:#3DDC97">上位${percentileAtLeast.toFixed(0)}%</strong>相当の結果です</div>`;
+  } else {
+    actualContent.innerHTML = `<div class="stat-sub">各項目のスライダー右にある「実績」ボタンで、実際に達成した軸をONにすると、世間一般の分布の中でのご自身の位置（上位◯%）が表示されます。</div>`;
+  }
+
+  // --- 組み合わせTOP5 ---
+  document.getElementById("pairs-title").textContent = `起きやすい組み合わせ TOP5（ρ=${rho}%で一緒に成功しやすいペア）`;
+  document.getElementById("pairs-list").innerHTML = topPairs.map((pr, idx) => `
+    <div class="pair-row">
+      <div class="pair-rank">${idx + 1}</div>
+      <div>
+        <div class="pair-names">
+          <span style="color:${CATS[pr.a.cat].color}">${pr.a.name}</span>
+          <span style="color:#7C8B9A"> × </span>
+          <span style="color:${CATS[pr.b.cat].color}">${pr.b.name}</span>
+        </div>
+        <div class="pair-stats">同時成功確率 <strong style="color:#E6EDF3">${pr.jp.toFixed(1)}%</strong>
+          <span style="color:#7C8B9A"> （独立仮定なら${pr.indep.toFixed(1)}%）</span>
+        </div>
+      </div>
+    </div>`).join("");
+
+  // --- 分布グラフ ---
+  document.getElementById("chart-svg").innerHTML = renderChart(chartData, threshold, hasActual, kActual);
+  let legend = `
+    <span class="legend-item"><span class="legend-dot" style="background:#2A3A47"></span>K未満</span>
+    <span class="legend-item"><span class="legend-dot" style="background:#FFB020"></span>K以上（達成ライン）</span>`;
+  if (hasActual) legend += `<span class="legend-item"><span class="legend-dot" style="background:#3DDC97"></span>実績（${kActual}軸）</span>`;
+  document.getElementById("legend-row").innerHTML = legend;
+}
+
+updateDerived();
+
+/* ===================== AI相談用Markdownプロンプト生成 ===================== */
+function generateMarkdownPrompt() {
+  const included = items.filter((it) => it.included);
+  const excluded = items.filter((it) => !it.included);
+  const s = lastStats;
+
+  const rows = included.map((it, i) => {
+    const gap = it.real - it.expect;
+    const achievedLabel = it.actual ? "達成" : "未達成/未設定";
+    return `| ${i + 1} | ${CATS[it.cat].label} | ${it.name} | ${it.p}% | ${achievedLabel} | ${it.expect}% | ${it.real}% | ${gap >= 0 ? "+" : ""}${gap} |`;
+  }).join("\n");
+
+  const excludedList = excluded.length
+    ? excluded.map((it) => `- ${it.name}`).join("\n")
+    : "（なし）";
+
+  return `# 転職成功確率シミュレーター — 現状データ（MIRAGE Analysis）
+
+このデータは、転職の「成功」を14個の軸に分解し、①一般的な達成確率からの統計的シミュレーションと、②期待値と実感値のギャップから算出する納得度、の2つの視点で状態を可視化するツールの出力です。以下の内容を踏まえて、率直な助言・壁打ちをお願いします。
+
+## モデル設定パラメータ
+
+- 対象軸数（母集団に含めている項目数）: ${s.n}軸
+- 達成ライン K（「K軸以上で成功」と見なす基準）: ${s.threshold}軸
+- カテゴリ内相関 ρ（同じカテゴリの項目がどれだけ連動するか）: ${s.rho}%
+
+## 各項目の入力値
+
+| # | カテゴリ | 項目 | 一般的な達成確率 | 実績 | 期待値 | 実感値 | 差分(実感-期待) |
+|---|---|---|---|---|---|---|---|
+${rows}
+
+除外中の項目（母集団から外している）:
+${excludedList}
+
+## 算出結果
+
+- 総合成功スコア（全項目の達成確率の単純平均）: ${s.weightedMean.toFixed(1)}%
+- 全軸AND達成確率（${s.n}軸すべてを同時に満たす確率・独立仮定）: ${s.andProb < 0.01 ? "0.01%未満" : s.andProb.toFixed(2) + "%"}
+- K軸(${s.threshold}軸)以上を達成する確率（カテゴリ内相関ρ=${s.rho}%を考慮したモンテカルロ・シミュレーション）: ${s.cumAtLeast.toFixed(1)}%
+${s.hasActual
+  ? `- 実績: ${s.n}軸中${s.kActual}軸を達成 → 上記シミュレーションの分布内で「上位${s.percentileAtLeast.toFixed(0)}%」相当の結果
+- 現在の納得度（期待値と実感値のギャップから算出。50%が「期待通り」の基準点）: ${s.satisfaction.toFixed(1)}%`
+  : `- 実績: 未入力（達成した項目が未設定）
+- 現在の納得度（期待値と実感値のギャップから算出。50%が「期待通り」の基準点）: ${s.satisfaction.toFixed(1)}%`
+}
+
+## 各指標の説明（用語集）
+
+- **一般的な達成確率**: 「世間一般的にはこのくらいの確率で起きるだろう」という主観的な仮定値。統計局などの実データではなく、入力者が置いた前提。
+- **実績**: その項目を実際に達成できたかどうかの二値（達成/未達成）。全軸中いくつ達成したかをカウントし、シミュレーション分布内での位置（パーセンタイル）を出すのに使う。
+- **期待値**: 転職前にその項目についてどれくらいの水準を期待していたか（0〜100）。
+- **実感値**: 転職後、実際にその項目をどれくらい実感できているか（0〜100）。
+- **差分(実感-期待)**: 実感値−期待値。プラスなら「期待以上」、マイナスなら「期待未満」。
+- **総合成功スコア**: 全項目の「一般的な達成確率」の単純平均。確率的な意味を持たない、水準感の目安。
+- **全軸AND達成確率**: 対象軸すべてを同時に満たす確率。軸数が多いほど自動的に小さくなるため、低い数字自体は悲観すべきものではない。
+- **K軸以上を達成する確率**: 対象軸のうちK個以上を達成する確率。カテゴリ内相関ρを考慮したモンテカルロ・シミュレーションによる近似値で、実務的に一番参照すべき数字。
+- **カテゴリ**: 定量・実務（収入・残業時間など）／内的動機・心理（裁量権・心理的安全性など）／定着・意思決定（オンボーディング・後悔のなさなど）の3分類。
+- **納得度**: 「達成できたか」の二値ではなく、期待と実感のギャップから算出する心理的な満足度の近似値。50%が期待通り、100%に近いほど期待を大きく上回っている状態。
+
+## 相談したいこと
+
+（ここに具体的に相談したい内容を記入してください。例：「納得度が低い項目にどう向き合うべきか」「K軸以上確率を上げるために優先すべき項目はどれか」など）
+`;
+}
+
+document.getElementById("export-prompt-btn").onclick = () => {
+  document.getElementById("prompt-textarea").value = generateMarkdownPrompt();
+  document.getElementById("prompt-modal").classList.remove("hidden");
+};
+document.getElementById("modal-close-btn").onclick = () => {
+  document.getElementById("prompt-modal").classList.add("hidden");
+};
+document.getElementById("prompt-modal").addEventListener("click", (e) => {
+  if (e.target.id === "prompt-modal") document.getElementById("prompt-modal").classList.add("hidden");
+});
+document.getElementById("copy-prompt-btn").onclick = () => {
+  const ta = document.getElementById("prompt-textarea");
+  const btn = document.getElementById("copy-prompt-btn");
+  const reset = () => { btn.textContent = "クリップボードにコピー"; };
+  const showCopied = () => { btn.textContent = "コピーしました"; setTimeout(reset, 1600); };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(ta.value).then(showCopied).catch(() => {
+      ta.select();
+      document.execCommand("copy");
+      showCopied();
+    });
+  } else {
+    ta.select();
+    document.execCommand("copy");
+    showCopied();
+  }
+};
+</script>
+</body>
+</html>
