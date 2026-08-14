@@ -68,6 +68,7 @@
   .actual-btn.on { background: var(--green); color: var(--bg); border-color: var(--green); }
   .slider-row2 { display: flex; align-items: center; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
   .mini-label { font-size: 10px; color: var(--muted); font-family: ui-monospace, monospace; flex-shrink: 0; width: 28px; }
+  .mini-label.prob-label { width: 52px; }
   .mini-slider-wrap { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 130px; }
   .side-panel { display: flex; flex-direction: column; gap: 16px; }
   .gauge-card { text-align: center; }
@@ -143,6 +144,7 @@
     .slider-row2 { flex-direction: column; align-items: stretch; gap: 8px; }
     .mini-slider-wrap { width: 100%; min-width: 0; }
     .mini-label { width: 32px; }
+    .mini-label.prob-label { width: 38px; }
   }
 </style>
 </head>
@@ -162,6 +164,7 @@
   <div class="msim-grid">
     <div class="panel">
       <div class="panel-title">成功の構成要素（自然な成功確率）</div>
+      <div class="stat-sub" style="margin-bottom:12px;">「達成確率」は、その項目を達成できる確率を表します。デフォルト値は一般的に言われている水準を仮置きしたものなので、ご自身の肌感と合わない場合はスライダーで調整してください。</div>
       <div id="item-list"></div>
     </div>
 
@@ -390,6 +393,9 @@ items.forEach((it) => {
 
   const sliderRow = document.createElement("div");
   sliderRow.className = "slider-row";
+  const probLabel = document.createElement("span");
+  probLabel.className = "mini-label prob-label";
+  probLabel.textContent = "達成確率";
   const slider = document.createElement("input");
   slider.type = "range"; slider.min = 0; slider.max = 100; slider.value = it.p;
   slider.style.color = CATS[it.cat].color;
@@ -410,6 +416,7 @@ items.forEach((it) => {
     updateDerived();
   };
 
+  sliderRow.appendChild(probLabel);
   sliderRow.appendChild(slider);
   sliderRow.appendChild(pValue);
   sliderRow.appendChild(actualBtn);
@@ -722,7 +729,7 @@ ${s.hasActual
 
 ## 各指標の説明（用語集）
 
-- **一般的な達成確率**: 「世間一般的にはこのくらいの確率で起きるだろう」という主観的な仮定値。統計局などの実データではなく、入力者が置いた前提。
+- **一般的な達成確率（達成確率）**: その項目を達成できる確率のこと。「世間一般的にはこのくらいの確率で起きるだろう」という主観的な仮定値であり、統計局などの実データではない。デフォルト値は一般的に言われている水準を仮置きしたものであり、入力者本人の状況・肌感と異なる場合は調整されている前提でこのデータを読むこと。
 - **実績**: その項目を実際に達成できたかどうかの二値（達成/未達成）。全軸中いくつ達成したかをカウントし、シミュレーション分布内での位置（パーセンタイル）を出すのに使う。
 - **期待値**: 転職前にその項目についてどれくらいの水準を期待していたか（0〜100）。
 - **実感値**: 転職後、実際にその項目をどれくらい実感できているか（0〜100）。
