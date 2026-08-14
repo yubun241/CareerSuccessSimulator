@@ -123,6 +123,13 @@
     position: fixed; bottom: 10px; right: 14px; font-size: 10px; color: var(--muted);
     font-family: ui-monospace, monospace; opacity: 0.5; letter-spacing: .04em; pointer-events: none; z-index: 10;
   }
+  .scatter-key { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 16px; margin-top: 14px; }
+  .scatter-key-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .scatter-key-num {
+    width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; color: #0B0F14; flex-shrink: 0; font-family: ui-monospace, monospace;
+  }
+  @media (max-width: 680px) { .scatter-key { grid-template-columns: 1fr; } }
   @media (max-width: 680px) {
     .msim-root { padding: 16px; }
     .msim-header { flex-direction: column; align-items: flex-start; }
@@ -215,6 +222,7 @@
       <span class="legend-item"><span class="legend-dot" style="background:#3DDC97"></span>対角線より上＝予想以上</span>
       <span class="legend-item"><span class="legend-dot" style="background:#FF6B6B"></span>対角線より下＝予想未満</span>
     </div>
+    <div class="scatter-key" id="scatter-key"></div>
   </div>
 
   <div class="panel">
@@ -395,7 +403,7 @@ items.forEach((it) => {
   };
   const actualBtn = document.createElement("button");
   actualBtn.className = "actual-btn";
-  actualBtn.textContent = "実績";
+  actualBtn.textContent = "達成";
   actualBtn.onclick = () => {
     it.actual = !it.actual;
     actualBtn.classList.toggle("on", it.actual);
@@ -531,9 +539,12 @@ function renderScatter(included) {
     const x = toX(it.expect), y = toY(it.real);
     const gap = it.real - it.expect;
     const fill = gap >= 0 ? "#3DDC97" : "#FF6B6B";
-    return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="6" fill="${fill}" fill-opacity="0.85" stroke="${CATS[it.cat].color}" stroke-width="1.5">
-      <title>${it.name}\n期待:${it.expect}% / 実感:${it.real}% (差:${gap >= 0 ? "+" : ""}${gap})</title>
-    </circle>`;
+    return `<g>
+      <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="9" fill="${fill}" fill-opacity="0.9" stroke="${CATS[it.cat].color}" stroke-width="1.5">
+        <title>${it.id}. ${it.name}\n期待:${it.expect}% / 実感:${it.real}% (差:${gap >= 0 ? "+" : ""}${gap})</title>
+      </circle>
+      <text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="middle" dominant-baseline="central" font-size="9" font-weight="700" fill="#0B0F14" pointer-events="none">${it.id}</text>
+    </g>`;
   }).join("");
 
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:240px;display:block;">
@@ -588,6 +599,14 @@ function updateDerived() {
 
   // --- 期待×実感マップ ---
   document.getElementById("scatter-svg").innerHTML = renderScatter(included);
+  document.getElementById("scatter-key").innerHTML = included.map((it) => {
+    const gap = it.real - it.expect;
+    const dotColor = gap >= 0 ? "#3DDC97" : "#FF6B6B";
+    return `<div class="scatter-key-item">
+      <span class="scatter-key-num" style="background:${dotColor}">${it.id}</span>
+      <span>${it.name}</span>
+    </div>`;
+  }).join("");
 
   // --- エクスポート用に最新の算出結果をキャッシュ ---
   lastStats = {
@@ -613,7 +632,7 @@ function updateDerived() {
       <div class="stat-sub">世間一般の分布の中で、あなたと同じかそれ以上を達成する割合は約${percentileAtLeast.toFixed(1)}%<br>
       → おおよそ<strong style="color:#3DDC97">上位${percentileAtLeast.toFixed(0)}%</strong>相当の結果です</div>`;
   } else {
-    actualContent.innerHTML = `<div class="stat-sub">各項目のスライダー右にある「実績」ボタンで、実際に達成した軸をONにすると、世間一般の分布の中でのご自身の位置（上位◯%）が表示されます。</div>`;
+    actualContent.innerHTML = `<div class="stat-sub">各項目のスライダー右にある「達成」ボタンで、実際に達成した軸をONにすると、世間一般の分布の中でのご自身の位置（上位◯%）が表示されます。</div>`;
   }
 
   // --- 組み合わせTOP5 ---
@@ -691,6 +710,16 @@ ${s.hasActual
 - 現在の納得度（期待値と実感値のギャップから算出。50%が「期待通り」の基準点）: ${s.satisfaction.toFixed(1)}%`
 }
 
+## AIへの追加リクエスト：現在地マップの分析
+
+上記のデータをもとに、心理学の「感情の円環モデル（Circumplex Model of Affect）」を用いて、私が今この瞬間どのあたりの心理状態にいると考えられるか分析してください。
+
+- X軸：不快 ←→ 快（Valence）
+- Y軸：鎮静 ←→ 覚醒（Arousal）
+- 4象限の目安：熱意・高揚（快×高覚醒）／不安・緊張（不快×高覚醒）／落ち込み・倦怠（不快×低覚醒）／穏やか・満足（快×低覚醒）
+
+上記の「納得度」「実績のパーセンタイル」「期待とのギャップ」などのデータから読み取れる根拠を示した上で、どのゾーンに近いと考えられるか、またそのゾーンにいる場合に意識すると良いことを教えてください。
+
 ## 各指標の説明（用語集）
 
 - **一般的な達成確率**: 「世間一般的にはこのくらいの確率で起きるだろう」という主観的な仮定値。統計局などの実データではなく、入力者が置いた前提。
@@ -703,6 +732,7 @@ ${s.hasActual
 - **K軸以上を達成する確率**: 対象軸のうちK個以上を達成する確率。カテゴリ内相関ρを考慮したモンテカルロ・シミュレーションによる近似値で、実務的に一番参照すべき数字。
 - **カテゴリ**: 定量・実務（収入・残業時間など）／内的動機・心理（裁量権・心理的安全性など）／定着・意思決定（オンボーディング・後悔のなさなど）の3分類。
 - **納得度**: 「達成できたか」の二値ではなく、期待と実感のギャップから算出する心理的な満足度の近似値。50%が期待通り、100%に近いほど期待を大きく上回っている状態。
+- **快・不快（Valence）／覚醒・鎮静（Arousal）**: 心理学の「感情の円環モデル（Circumplex Model of Affect）」の2軸。このプロンプトでは自己申告値としては持たせず、上記データを根拠にAI側で分析してもらうためのリクエスト事項として末尾に記載している。
 
 ## 相談したいこと
 
